@@ -1,3 +1,7 @@
+/*
+*  autoMove.ino
+*
+*/
 #define PIN_SERVO 3
 #define PIN_ENGINE_R_SPEED 5
 #define PIN_ENGINE_L_SPEED 11
@@ -7,6 +11,7 @@
 #define PIN_L_FORWARD 9
 #define PIN_US_TRIG A5
 #define PIN_US_ECHO A4
+// uncomment the following define to print some debug info through the serial interface
 //#define DEBUG
 
 #include <Servo.h>
@@ -16,20 +21,20 @@ Servo myservo;
 #define MAX_DISTANCE 200
 NewPing sonar(PIN_US_TRIG, PIN_US_ECHO);
 
-int WHEEL_SPEED         = 128;
-int RIGHT_WHEELS_OFFSET = 20;
-int SERVO_ANGLE         = 30;
-int SERVO_OFFSET        = -5;
-int STOP_DISTANCE       = 25;
-int SAME_DISTANCE_CM    = 10;
+int WHEEL_SPEED         = 128;  // motor speed
+int RIGHT_WHEELS_OFFSET = 20;   // extra speed for right wheels (needed for my car)
+int SERVO_ANGLE         = 30;   // max rotation angle to measure distances
+int SERVO_OFFSET        = -5;   // in my car, the servo is not front aligned with a 90° angle..
+int STOP_DISTANCE       = 25;   // threshold, in cm, to stop motors and rotate
+int SAME_DISTANCE_CM    = 10;   // to compare consecutive measures (to check if the car is really moving)
 
-int DELAY_SERVO         = 400;
-int DELAY_STEP_FORWARD  = 400;
-int DELAY_STEP_ROTATE   = 400;
-int DELAY_STEP_REVERSE  = 1350;
-int DELAY_STEP_STOP     = 100;
-int DELAY_STEP_BRAKE    = 10;
-int DELAY_LOOP          = 50;
+int DELAY_SERVO         = 400;  // in ms, move servo motor and wait before measuring distances
+int DELAY_STEP_FORWARD  = 400;  // move forward for about 25cm
+int DELAY_STEP_ROTATE   = 400;  // turn left or right of about 30°
+int DELAY_STEP_REVERSE  = 1350; // delay to reverse the moving direction of 180° (for my car)
+int DELAY_STEP_STOP     = 100;  // little delay to have the car stopped
+int DELAY_STEP_BRAKE    = 10;   // to stop faster the car, after a forward moving
+int DELAY_LOOP          = 50;   // just to add a little delay at every cycle
 
 int MAX_REVERSE_CYCLES  = 4;
 int MAX_ROTATE_CYCLES   = 6;
@@ -62,13 +67,6 @@ void setup() {
 void loop() {
   if (!isBlocked) {
     measure_distances();
-    
-    printInt(distanceLeft);
-    printStr(",");
-    printInt(distanceFront);
-    printStr(",");
-    printLnInt(distanceRight);
-
     moving_algorithm();
     watch_dog();
   
@@ -96,7 +94,13 @@ void measure_distances() {
     move_servo(SERVO_ANGLE);
     distanceLeft = distance_test();
   }
-
+  
+  printInt(distanceLeft);
+  printStr(",");
+  printInt(distanceFront);
+  printStr(",");
+  printLnInt(distanceRight);
+  
   servoLeftToRight = !servoLeftToRight;
 }
 
