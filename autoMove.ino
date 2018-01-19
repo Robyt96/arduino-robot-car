@@ -86,6 +86,8 @@ void setup() {
 }
 
 void loop() {
+  // "blocked" here means more than MAX_REVERSE_CYCLES (4) consecutive 180-degree
+  // rotations. In this case, stop forever
   if (!isBlocked) {
     measure_distances(); // find obstacles
     moving_algorithm();  // move the car
@@ -102,6 +104,8 @@ void loop() {
 }
 
 void measure_distances() {
+  // measure the three distances (left, front, right) from left to right
+  // or vice-versa, depending on where the servo motor is
   if (servoLeftToRight) {
     distanceLeft = distance_test();
     move_servo(0);
@@ -123,15 +127,20 @@ void measure_distances() {
   printStr(",");
   printLnInt(distanceRight);
   
+  // change the order of the measures for the next cycle
   servoLeftToRight = !servoLeftToRight;
 }
 
 int move_servo(int angle) {
-    myservo.write(90 + SERVO_OFFSET + angle);
-    delay(DELAY_SERVO);  
+  // move the servo (with the ultrasound sensors) and wait
+  // the small SERVO_OFFSET is to cope with the servo of my car, a bit unaligned
+  myservo.write(90 + SERVO_OFFSET + angle);
+  delay(DELAY_SERVO);  
 }
 
 int distance_test() {
+  // take the average of three measures, to avoid random errors that sometimes
+  // happen. Even with this average, not always you'll get good values...
   int distance1 = _measure();
   delay(20);
   int distance2 = _measure();
@@ -140,6 +149,8 @@ int distance_test() {
   int distance = (distance1 + distance2 + distance3) / 3;
   
   if (distance <= 0) {
+    // this should never happen if the servo is not initialized with a max
+    // distance. Just to be on the safe side
     return MAX_DISTANCE;
   }
   else {
@@ -148,10 +159,17 @@ int distance_test() {
 }
 
 int _measure() {
+  // get the distance (in cm) between the sensors and an obstacle
   return sonar.ping_cm();
 }
 
 void moving_algorithm() {
+  // ok, this is the moving algorithm, after getting the three distances:
+  // - everywhere free in front of the car -> go ahead a little and stop
+  // - obstacle in front-left -> turn right (and vice-versa)
+  // - obstacle just in front -> turn towards the freer direction (i.e. greater distance)
+  // - obstacle everywhere (left, front, right) -> reverse
+  
   if (distanceFront > STOP_DISTANCE && distanceLeft > STOP_DISTANCE && distanceRight > STOP_DISTANCE) {
     moving_forward();
   }
@@ -170,7 +188,7 @@ void moving_algorithm() {
     }
   }
   else if (distanceLeft <= STOP_DISTANCE) {
-    //bug: all'accensione gira a destra anche se davanti e' libero. dopo il reset non accade
+    // when you switch on the car, it would turn always right at first (even without obstacles)
     if (!firstCycle) {
       moving_rotate(false); //turn right
     }
@@ -189,18 +207,19 @@ void moving_forward() {
   digitalWrite(PIN_R_BACK, LOW);
   digitalWrite(PIN_L_BACK, LOW);
   digitalWrite(PIN_L_FORWARD, HIGH);
+  // use the analogWrite to move the car slowly. 128 should be a good value. My car
+  // tends to deviate to right, so add some RIGHT_WHEELS_OFFSET to the right motor
   analogWrite(PIN_ENGINE_R_SPEED, WHEEL_SPEED + RIGHT_WHEELS_OFFSET);
   analogWrite(PIN_ENGINE_L_SPEED, WHEEL_SPEED);
 
-  delay(DELAY_STEP_FORWARD);
-  moving_brake();
-  //moving_stop();
+  delay(DELAY_STEP_FORWARD); // this should be enough for 20-30 cm
+  moving_brake(); // to stop faster the car, a small back motion ("brake")
 }
 
 void moving_rotate(boolean toLeft) {
   //printLnStr("rotate");
   reverseCounter = 0;
-  rotateCounter = rotateCounter + 1;
+  rotateCounter = rotateCounter + 1; // to catch too many consecutive rotations
 
   if (toLeft) {
     digitalWrite(PIN_R_FORWARD, HIGH);
@@ -218,13 +237,13 @@ void moving_rotate(boolean toLeft) {
   analogWrite(PIN_ENGINE_R_SPEED, WHEEL_SPEED + RIGHT_WHEELS_OFFSET);
   analogWrite(PIN_ENGINE_L_SPEED, WHEEL_SPEED);
 
-  delay(DELAY_STEP_ROTATE);
+  delay(DELAY_STEP_ROTATE); // this should give a 30 degree rotation of the car
   moving_stop();
 }
 
 void moving_reverse() {
   //printLnStr("reverse");
-  reverseCounter = reverseCounter + 1;
+  reverseCounter = reverseCounter + 1; // to catch too many consecutive reversals
   rotateCounter = 0;
 
   digitalWrite(PIN_R_FORWARD, HIGH);
@@ -234,7 +253,7 @@ void moving_reverse() {
   analogWrite(PIN_ENGINE_R_SPEED, WHEEL_SPEED + RIGHT_WHEELS_OFFSET);
   analogWrite(PIN_ENGINE_L_SPEED, WHEEL_SPEED);
  
-  delay(DELAY_STEP_REVERSE);
+  delay(DELAY_STEP_REVERSE); // adjust it, in order to have a 180 degree rotation
   moving_stop();  
 }
 
@@ -275,15 +294,25 @@ void moving_brake() {
 }
 
 void watch_dog() {
+  // this function is added to the "normal" algorithm in order to try to solve
+  // these potential problems:
+  // - the car continues to reverse its motion (for istance, in a box)
+  // - the car cannot decide whether to turn left or right
+  // - the car is blocked by an unseen obstacle
+  
   if (reverseCounter > MAX_REVERSE_CYCLES) {
     //printLnStr("reverseLoop");
-    reverseLoop = true;
+    reverseLoop = true; // in this case, stop forever
   }
   else if (rotateCounter > MAX_ROTATE_CYCLES) {
     //printLnStr("rotateLoop");
-    rotateLoop = true;
+    rotateLoop = true; // in this case, reverse the motion
   }
 
+  // this is a kind of bet: if all the three measures (left, front, right) are
+  // more or less the same for some consecutive cycles, the car is not really
+  // moving (even if the main algorithm "thinks" so). It's the only way to handle
+  // this (using only the ultrasound sensors)
   int diffLeft  = distanceLeft - oldDistanceLeft;
   int diffFront = distanceFront - oldDistanceFront;
   int diffRight = distanceRight - oldDistanceRight;
@@ -298,6 +327,7 @@ void watch_dog() {
   }
 
   if (sameDistanceCounter > MAX_BLOCKED_CYCLES) {
+    // if the car is blocked by an unseen obstacle, go back and rotate
     sameDistanceCounter = 0;
     moving_back();
     delay(DELAY_LOOP);  
