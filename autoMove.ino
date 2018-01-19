@@ -1,6 +1,9 @@
 /*
-*  autoMove.ino
+*  Sketch : autoMove.ino
+*  Authors: Roberto Tagliabue, Donato Tagliabue
+*  Date   : Jan 2018
 *
+*  Move an Arduino (Elegoo) car avoiding obstacles
 */
 #define PIN_SERVO 3
 #define PIN_ENGINE_R_SPEED 5
@@ -11,12 +14,16 @@
 #define PIN_L_FORWARD 9
 #define PIN_US_TRIG A5
 #define PIN_US_ECHO A4
-// uncomment the following define to print some debug info through the serial interface
+// uncomment the following #define to print some debug info through the serial interface
 //#define DEBUG
 
+// the servo motor is used to "look" (with ultrasounds) at the left and right
+// before moving forward or rotating
 #include <Servo.h>
 Servo myservo;
 
+// NewPing library is used to measure distances with ultrasounds. More or less the same
+// data (and random errors) can also be obtained without using this library
 #include <NewPing.h>
 #define MAX_DISTANCE 200
 NewPing sonar(PIN_US_TRIG, PIN_US_ECHO);
@@ -40,14 +47,27 @@ int MAX_REVERSE_CYCLES  = 4;
 int MAX_ROTATE_CYCLES   = 6;
 int MAX_BLOCKED_CYCLES  = 1;
 
+// at every loop cycle, three distances are measured: left, front, right (left and
+// right at SERVO_ANGLE degrees). To save time (reducing servo motor movements),
+// during a cycle they are measured from left to right and the next cycle from right to left
 boolean servoLeftToRight = true;
+
+// the measured distances during the current cycle
 int distanceLeft, distanceFront, distanceRight;
+
+// the distances measured the cycle before, to be compared to the current ones
+// (if for three cycles the values are the same, the car is supposed to be "blocked")
 int oldDistanceLeft, oldDistanceFront, oldDistanceRight;
+
+// counters used by the "watchdog" function, to cope with possible loops and "blocks"
 int rotateCounter = 0, reverseCounter = 0, sameDistanceCounter = 0;
 boolean rotateLoop = false, reverseLoop = false, isBlocked = false;
+
+// for an unknown reason, the car just switched on turns right on the first cycle..
 boolean firstCycle = true;
 
 void setup() {
+  // initialize the pins for ultrasound sensors and wheel motors
   pinMode(PIN_US_ECHO, INPUT);    
   pinMode(PIN_US_TRIG, OUTPUT);
   pinMode(PIN_ENGINE_R_SPEED, OUTPUT);
@@ -57,6 +77,7 @@ void setup() {
   pinMode(PIN_L_BACK, OUTPUT);
   pinMode(PIN_L_FORWARD, OUTPUT);
 
+  // move the ultrasound sensors on the left, ready for the first measure
   myservo.attach(PIN_SERVO);
   #ifdef DEBUG
   Serial.begin(9600);
@@ -66,10 +87,11 @@ void setup() {
 
 void loop() {
   if (!isBlocked) {
-    measure_distances();
-    moving_algorithm();
-    watch_dog();
+    measure_distances(); // find obstacles
+    moving_algorithm();  // move the car
+    watch_dog();         // find abnormal situations
   
+    // save distance measures for the next cycle (for the watch_dog function)
     oldDistanceLeft  = distanceLeft;
     oldDistanceFront = distanceFront;
     oldDistanceRight = distanceRight;
